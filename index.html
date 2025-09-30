@@ -18,123 +18,130 @@
   </div>
 
   <script>
-    const socket = io('https://video-call-l2ij.onrender.com'); // Update with your signaling server URL
-    const videoGrid = document.getElementById('videoGrid');
-    const roomNameInput = document.getElementById('roomName');
-    const joinBtn = document.getElementById('joinBtn');
-    let myPeerConnection;
-    let myStream;
-    const peers = {};
+  const socket = io('https://video-call-l2ij.onrender.com');
+  const videoGrid = document.getElementById('videoGrid');
+  const roomNameInput = document.getElementById('roomName');
+  const joinBtn = document.getElementById('joinBtn');
+  let myPeerConnection;
+  let myStream;
+  const peers = {};
 
-    // Get user media
-    async function initMedia() {
-      try {
-        myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        addVideoStream(myStream, 'You');
-      } catch (err) {
-        console.error('Error accessing media devices:', err);
-        alert('Could not access camera or microphone.');
+  // Get user media
+  async function initMedia() {
+    try {
+      myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      addVideoStream(myStream, 'You');
+    } catch (err) {
+      console.error('Error accessing media devices:', err);
+      alert('Could not access camera or microphone.');
+    }
+  }
+
+  // Add video stream to grid
+  function addVideoStream(stream, userId) {
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    video.autoplay = true;
+    video.className = 'w-full rounded';
+    const videoContainer = document.createElement('div');
+    videoContainer.className = 'relative';
+    const userLabel = document.createElement('div');
+    userLabel.className = 'absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded';
+    userLabel.textContent = userId;
+    videoContainer.appendChild(video);
+    videoContainer.appendChild(userLabel);
+    videoGrid.appendChild(videoContainer);
+  }
+
+  // Handle WebRTC connection
+  async function createPeerConnection(userId) {
+    const peer = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    myStream.getTracks().forEach(track => peer.addTrack(track, myStream));
+
+    peer.ontrack = (event) => {
+      if (!peers[userId]) {
+        addVideoStream(event.streams[0], userId);
+        peers[userId] = peer;
       }
+    };
+
+    peer.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('ice-candidate', { candidate: event.candidate, to: userId, room: roomNameInput.value.trim().toLowerCase() });
+      }
+    };
+
+    return peer;
+  }
+
+  // Join room
+  joinBtn.addEventListener('click', async () => {
+    const room = roomNameInput.value.trim().toLowerCase();
+    if (!room) {
+      alert('Please enter a room name.');
+      return;
     }
 
-    // Add video stream to grid
-    function addVideoStream(stream, userId) {
-      const video = document.createElement('video');
-      video.srcObject = stream;
-      video.autoplay = true;
-      video.className = 'w-full rounded';
-      const videoContainer = document.createElement('div');
-      videoContainer.className = 'relative';
-      const userLabel = document.createElement('div');
-      userLabel.className = 'absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded';
-      userLabel.textContent = userId;
-      videoContainer.appendChild(video);
-      videoContainer.appendChild(userLabel);
-      videoGrid.appendChild(videoContainer);
+    await initMedia();
+    socket.emit('join-room', room);
+    joinBtn.disabled = true;
+    roomNameInput.disabled = true;
+  });
+
+  // Socket.IO event handlers
+  socket.on('user-connected', async (userId) => {
+    console.log('New user connected:', userId);
+    const peer = await createPeerConnection(userId);
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    socket.emit('offer', { offer, to: userId, room: roomNameInput.value.trim().toLowerCase() });
+    peers[userId] = peer;
+  });
+
+  socket.on('offer', async ({ offer, from }) => {
+    console.log('Received offer from:', from);
+    const peer = await createPeerConnection(from);
+    await peer.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await peer.createAnswer();
+    await peer.setLocalDescription(answer);
+    socket.emit('answer', { answer, to: from, room: roomNameInput.value.trim().toLowerCase() });
+    peers[from] = peer;
+  });
+
+  socket.on('answer', async ({ answer, from }) => {
+    console.log('Received answer from:', from);
+    const peer = peers[from];
+    if (peer) {
+      await peer.setRemoteDescription(new RTCSessionDescription(answer));
     }
+  });
 
-    // Handle WebRTC connection
-    async function createPeerConnection(userId) {
-      const peer = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-      });
-
-      myStream.getTracks().forEach(track => peer.addTrack(track, myStream));
-
-      peer.ontrack = (event) => {
-        if (!peers[userId]) {
-          addVideoStream(event.streams[0], userId);
-          peers[userId] = peer;
-        }
-      };
-
-      peer.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('ice-candidate', { candidate: event.candidate, to: userId, room: roomNameInput.value });
-        }
-      };
-
-      return peer;
+  socket.on('ice-candidate', async ({ candidate, from }) => {
+    console.log('Received ICE candidate from:', from);
+    const peer = peers[from];
+    if (peer) {
+      await peer.addIceCandidate(new RTCIceCandidate(candidate));
     }
+  });
 
-    // Join room
-    joinBtn.addEventListener('click', async () => {
-      const room = roomNameInput.value.trim();
-      if (!room) {
-        alert('Please enter a room name.');
-        return;
-      }
-
-      await initMedia();
-      socket.emit('join-room', room);
-      joinBtn.disabled = true;
-      roomNameInput.disabled = true;
-    });
-
-    // Socket.IO event handlers
-    socket.on('user-connected', async (userId) => {
-      const peer = await createPeerConnection(userId);
-      const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer);
-      socket.emit('offer', { offer, to: userId, room: roomNameInput.value });
-      peers[userId] = peer;
-    });
-
-    socket.on('offer', async ({ offer, from }) => {
-      const peer = await createPeerConnection(from);
-      await peer.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await peer.createAnswer();
-      await peer.setLocalDescription(answer);
-      socket.emit('answer', { answer, to: from, room: roomNameInput.value });
-    });
-
-    socket.on('answer', async ({ answer, from }) => {
-      const peer = peers[from];
-      if (peer) {
-        await peer.setRemoteDescription(new RTCSessionDescription(answer));
-      }
-    });
-
-    socket.on('ice-candidate', async ({ candidate, from }) => {
-      const peer = peers[from];
-      if (peer) {
-        await peer.addIceCandidate(new RTCIceCandidate(candidate));
-      }
-    });
-
-    socket.on('user-disconnected', (userId) => {
-      if (peers[userId]) {
-        peers[userId].close();
-        delete peers[userId];
-        const videos = videoGrid.getElementsByTagName('video');
-        for (let video of videos) {
-          if (video.srcObject && video.srcObject.id === userId) {
-            video.parentElement.remove();
-            break;
-          }
+  socket.on('user-disconnected', (userId) => {
+    console.log('User disconnected:', userId);
+    if (peers[userId]) {
+      peers[userId].close();
+      delete peers[userId];
+      const videos = videoGrid.getElementsByTagName('video');
+      for (let video of videos) {
+        const label = video.parentElement.getElementsByTagName('div')[0];
+        if (label && label.textContent === userId) {
+          video.parentElement.remove();
+          break;
         }
       }
-    });
-  </script>
+    }
+  });
+</script>
 </body>
 </html>
