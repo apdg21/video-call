@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Family Video Call</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.0/socket.io.min.js"></script>
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen">
+  <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-4xl">
+    <h1 class="text-2xl font-bold text-center mb-4">Family Video Call</h1>
+    <div class="mb-4">
+      <input id="roomName" type="text" placeholder="Enter family room name" class="w-full p-2 border rounded">
+      <button id="joinBtn" class="mt-2 w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Join Call</button>
+    </div>
+    <div id="videoGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+  </div>
+
+  <script>
+    const socket = io('http://localhost:3000'); // Update with your signaling server URL
+    const videoGrid = document.getElementById('videoGrid');
+    const roomNameInput = document.getElementById('roomName');
+    const joinBtn = document.getElementById('joinBtn');
+    let myPeerConnection;
+    let myStream;
+    const peers = {};
+
+    // Get user media
+    async function initMedia() {
+      try {
+        myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        addVideoStream(myStream, 'You');
+      } catch (err) {
+        console.error('Error accessing media devices:', err);
+        alert('Could not access camera or microphone.');
+      }
+    }
+
+    // Add video stream to grid
+    function addVideoStream(stream, userId) {
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.autoplay = true;
+      video.className = 'w-full rounded';
+      const videoContainer = document.createElement('div');
+      videoContainer.className = 'relative';
+      const userLabel = document.createElement('div');
+      userLabel.className = 'absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded';
+      userLabel.textContent = userId;
+      videoContainer.appendChild(video);
+      videoContainer.appendChild(userLabel);
+      videoGrid.appendChild(videoContainer);
+    }
+
+    // Handle WebRTC connection
+    async function createPeerConnection(userId) {
+      const peer = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+
+      myStream.getTracks().forEach(track => peer.addTrack(track, myStream));
+
+      peer.ontrack = (event) => {
+        if (!peers[userId]) {
+          addVideoStream(event.streams[0], userId);
+          peers[userId] = peer;
+        }
+      };
+
+      peer.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('ice-candidate', { candidate: event.candidate, to: userId, room: roomNameInput.value });
+        }
+      };
+
+      return peer;
+    }
+
+    // Join room
+    joinBtn.addEventListener('click', async () => {
+      const room = roomNameInput.value.trim();
+      if (!room) {
+        alert('Please enter a room name.');
+        return;
+      }
+
+      await initMedia();
+      socket.emit('join-room', room);
+      joinBtn.disabled = true;
+      roomNameInput.disabled = true;
+    });
+
+    // Socket.IO event handlers
+    socket.on('user-connected', async (userId) => {
+      const peer = await createPeerConnection(userId);
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      socket.emit('offer', { offer, to: userId, room: roomNameInput.value });
+      peers[userId] = peer;
+    });
+
+    socket.on('offer', async ({ offer, from }) => {
+      const peer = await createPeerConnection(from);
+      await peer.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      socket.emit('answer', { answer, to: from, room: roomNameInput.value });
+    });
+
+    socket.on('answer', async ({ answer, from }) => {
+      const peer = peers[from];
+      if (peer) {
+        await peer.setRemoteDescription(new RTCSessionDescription(answer));
+      }
+    });
+
+    socket.on('ice-candidate', async ({ candidate, from }) => {
+      const peer = peers[from];
+      if (peer) {
+        await peer.addIceCandidate(new RTCIceCandidate(candidate));
+      }
+    });
+
+    socket.on('user-disconnected', (userId) => {
+      if (peers[userId]) {
+        peers[userId].close();
+        delete peers[userId];
+        const videos = videoGrid.getElementsByTagName('video');
+        for (let video of videos) {
+          if (video.srcObject && video.srcObject.id === userId) {
+            video.parentElement.remove();
+            break;
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>
