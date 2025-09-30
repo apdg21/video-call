@@ -7,17 +7,18 @@ const io = require('socket.io')(server);
 app.use(express.static(__dirname));
 
 app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/index.html');
+  res.sendFile(__dirname + '/package.json' + '/index.html');
 });
 
-// Rest of your server.js code remains the same
+app.get('/favicon.ico', (req, res) => res.status(204).end()); // Suppress favicon 404
+
 io.on('connection', (socket) => {
   socket.on('join-room', (room) => {
     socket.join(room);
-    socket.to(room).emit('user-connected', socket.id);
+    socket.broadcast.to(room).emit('user-connected', socket.id); // Notify others
 
     socket.on('disconnect', () => {
-      socket.to(room).emit('user-disconnected', socket.id);
+      socket.broadcast.to(room).emit('user-disconnected', socket.id);
     });
   });
 
