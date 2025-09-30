@@ -3,6 +3,14 @@ const app = express();
 const server = require('http').createServer(app);
 const io = require('socket.io')(server);
 
+// Serve static files
+app.use(express.static(__dirname));
+
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/index.html');
+});
+
+// Rest of your server.js code remains the same
 io.on('connection', (socket) => {
   socket.on('join-room', (room) => {
     socket.join(room);
@@ -26,6 +34,6 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(3000, () => {
-  console.log('Signaling server running on port 3000');
+server.listen(process.env.PORT || 3000, () => {
+  console.log('Signaling server running on port', process.env.PORT || 3000);
 });
