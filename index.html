@@ -82,9 +82,7 @@
   </main>
 
 <script>
-const SOCKET_SERVER_URL = location.hostname === 'localhost' 
-  ? 'http://localhost:3000' 
-  : 'https://video-call-l2ij.onrender.com';
+const SOCKET_SERVER_URL = location.hostname==='localhost' ? 'http://localhost:3000' : 'https://video-call-l2ij.onrender.com';
 const socket = io(SOCKET_SERVER_URL, { transports: ['websocket','polling'] });
 
 const videoGrid=document.getElementById('videoGrid');
@@ -102,7 +100,6 @@ const connectionStatus=document.getElementById('connectionStatus');
 let myStream=null,isVideoOn=true,isAudioOn=true,currentRoom=null,myDisplayName='User';
 const peers={},userDisplayNames={};
 
-// Connection status UI
 function updateConnectionStatus(status){
   const indicator=connectionStatus.querySelector('.h-3');
   const text=connectionStatus.querySelector('span:last-child');
@@ -111,7 +108,6 @@ function updateConnectionStatus(status){
   text.textContent=status.charAt(0).toUpperCase()+status.slice(1);
 }
 
-// Init media
 async function initMedia(){
   try{
     myStream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
@@ -121,57 +117,75 @@ async function initMedia(){
     [toggleVideoBtn,toggleAudioBtn,leaveBtn,chatInput,sendBtn].forEach(b=>b.disabled=false);
     toggleVideoBtn.classList.add('bg-green-600');toggleAudioBtn.classList.add('bg-green-600');
     return true;
-  }catch(err){alert('No camera/microphone.');return false;}
+  }catch(err){console.error('Media error',err);alert('No camera/microphone.');return false;}
 }
 
-// Add video
 function addVideoStream(stream,userName,type,userId){
   const idKey=type==='local'?'local':userId;
   removeVideoStream(idKey);
-  const c=document.createElement('div');
-  c.className='relative bg-black rounded-lg overflow-hidden video-container';c.id=`video-${idKey}`;
+  const c=document.createElement('div');c.className='relative bg-black rounded-lg overflow-hidden video-container';c.id=`video-${idKey}`;
   const v=document.createElement('video');
   v.srcObject=stream;v.autoplay=true;v.playsInline=true;v.muted=(type==='local');
   v.className='w-full h-full object-cover';
-  v.onloadedmetadata=()=>v.play().catch(err=>console.error('play failed',err));
-  const l=document.createElement('div');
-  l.className='absolute bottom-2 left-2 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-sm';
+  v.onloadedmetadata=()=>v.play().catch(err=>console.error('Play failed',err));
+  const l=document.createElement('div');l.className='absolute bottom-2 left-2 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-sm';
   l.textContent=userName+(type==='local'?' (You)':'');
   c.appendChild(v);c.appendChild(l);videoGrid.appendChild(c);
   const ph=videoGrid.querySelector('.text-center');if(ph)ph.remove();
 }
 function removeVideoStream(idKey){const el=document.getElementById(`video-${idKey}`);if(el)el.remove();}
 
-// Peer
 async function createPeerConnection(userId){
   const p=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
   myStream.getTracks().forEach(t=>p.addTrack(t,myStream));
-  p.ontrack=(e)=>{const n=userDisplayNames[userId]||`User ${userId.substring(0,6)}`;addVideoStream(e.streams[0],n,'remote',userId);};
+  p.ontrack=(e)=>{console.log('Remote track from',userId);const n=userDisplayNames[userId]||`User ${userId.substring(0,6)}`;
+    addVideoStream(e.streams[0],n,'remote',userId);};
   p.onicecandidate=(e)=>{if(e.candidate&&currentRoom){socket.emit('ice-candidate',{candidate:e.candidate,to:userId,room:currentRoom});}};
+  p.onconnectionstatechange=()=>console.log(`Peer ${userId} state`,p.connectionState);
   return p;
 }
 
-// Join
 joinBtn.addEventListener('click',async()=>{
   const room=roomNameInput.value.trim().toLowerCase();if(!room){alert('Enter room name');return;}
   if(!await initMedia())return;currentRoom=room;updateConnectionStatus('connecting');
-  socket.emit('join-room',room,myDisplayName);joinBtn.disabled=true;roomNameInput.disabled=true;displayNameInput.disabled=true;
+  socket.emit('join-room',room,myDisplayName);
+  joinBtn.disabled=true;roomNameInput.disabled=true;displayNameInput.disabled=true;
 });
 
-// Socket
+// Leave Call
+leaveBtn.addEventListener('click',()=>{
+  if(currentRoom)socket.emit('leave-room',currentRoom);
+  Object.values(peers).forEach(p=>p.close());
+  for(const id in peers)delete peers[id];
+  if(myStream)myStream.getTracks().forEach(t=>t.stop());
+  videoGrid.innerHTML='<div class="text-center text-gray-500 py-8 col-span-2"><i class="fas fa-video text-4xl mb-4"></i><p>Join a room to start video calling</p></div>';
+  chatMessages.innerHTML='<div class="text-center text-gray-400 py-4">No messages yet.</div>';
+  [toggleVideoBtn,toggleAudioBtn,leaveBtn,chatInput,sendBtn].forEach(b=>b.disabled=true);
+  joinBtn.disabled=false;roomNameInput.disabled=false;displayNameInput.disabled=false;
+  updateConnectionStatus('disconnected');
+  currentRoom=null;
+});
+
+// Socket events
 socket.on('room-joined',async(users)=>{updateConnectionStatus('connected');
   for(const u of users){userDisplayNames[u.id]=u.displayName;if(u.id!==socket.id)await createAndSendOffer(u.id);}
 });
-socket.on('user-connected',async(id,name)=>{userDisplayNames[id]=name;await createAndSendOffer(id);});
-socket.on('offer',async({offer,from})=>{const p=await createPeerConnection(from);await p.setRemoteDescription(new RTCSessionDescription(offer));
-  const a=await p.createAnswer();await p.setLocalDescription(a);socket.emit('answer',{answer:a,to:from,room:currentRoom});peers[from]=p;});
-socket.on('answer',async({answer,from})=>{if(peers[from])await peers[from].setRemoteDescription(new RTCSessionDescription(answer));});
-socket.on('ice-candidate',async({candidate,from})=>{if(peers[from])await peers[from].addIceCandidate(new RTCIceCandidate(candidate));});
-socket.on('user-disconnected',(id)=>{if(peers[id]){peers[id].close();delete peers[id];}removeVideoStream(id);delete userDisplayNames[id];});
+socket.on('user-connected',async(id,name)=>{console.log('User joined',id);userDisplayNames[id]=name;await createAndSendOffer(id);});
+socket.on('offer',async({offer,from})=>{console.log('Got offer from',from);const p=await createPeerConnection(from);
+  await p.setRemoteDescription(new RTCSessionDescription(offer));
+  const a=await p.createAnswer();await p.setLocalDescription(a);
+  socket.emit('answer',{answer:a,to:from,room:currentRoom});peers[from]=p;});
+socket.on('answer',async({answer,from})=>{console.log('Got answer from',from);if(peers[from])await peers[from].setRemoteDescription(new RTCSessionDescription(answer));});
+socket.on('ice-candidate',async({candidate,from})=>{if(peers[from]){try{await peers[from].addIceCandidate(new RTCIceCandidate(candidate));}catch(e){console.error(e);}}});
+socket.on('user-disconnected',(id)=>{console.log('User left',id);if(peers[id]){peers[id].close();delete peers[id];}removeVideoStream(id);delete userDisplayNames[id];});
 
-// Offers
-async function createAndSendOffer(id){const p=await createPeerConnection(id);const o=await p.createOffer();await p.setLocalDescription(o);
-  socket.emit('offer',{offer:o,to:id,room:currentRoom});peers[id]=p;}
+// Offer helper
+async function createAndSendOffer(id){
+  const p=await createPeerConnection(id);
+  const o=await p.createOffer();await p.setLocalDescription(o);
+  socket.emit('offer',{offer:o,to:id,room:currentRoom});
+  peers[id]=p;
+}
 
 // Chat
 function sendMessage(){
