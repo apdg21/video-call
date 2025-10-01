@@ -10,65 +10,50 @@
   <style>
     .video-container { aspect-ratio: 16/9; }
     .pulse-connecting { animation: pulse 2s infinite; }
-    @keyframes pulse {
-      0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; }
-    }
-    .status-connected { background-color: #10B981 !important; }
-    .status-connecting { background-color: #F59E0B !important; }
-    .status-disconnected { background-color: #EF4444 !important; }
+    @keyframes pulse { 0%{opacity:1;} 50%{opacity:.5;} 100%{opacity:1;} }
+    .status-connected { background-color:#10B981 !important; }
+    .status-connecting { background-color:#F59E0B !important; }
+    .status-disconnected { background-color:#EF4444 !important; }
   </style>
 </head>
 <body class="bg-gray-900 text-white">
-  <header class="bg-gray-800 p-4 shadow-md">
-    <div class="container mx-auto flex justify-between items-center">
-      <h1 class="text-2xl font-bold flex items-center">
-        <i class="fas fa-users mr-2 text-blue-400"></i>
-        Family Video Call
-      </h1>
-      <div id="connectionStatus" class="flex items-center">
-        <span class="h-3 w-3 rounded-full status-disconnected mr-2"></span>
-        <span>Disconnected</span>
-      </div>
+  <!-- Header -->
+  <header class="bg-gray-800 p-4 shadow-md flex justify-between">
+    <h1 class="text-2xl font-bold flex items-center">
+      <i class="fas fa-users mr-2 text-blue-400"></i> Family Video Call
+    </h1>
+    <div id="connectionStatus" class="flex items-center">
+      <span class="h-3 w-3 rounded-full status-disconnected mr-2"></span>
+      <span>Disconnected</span>
     </div>
   </header>
 
+  <!-- Main -->
   <main class="container mx-auto p-4 flex flex-col lg:flex-row gap-6">
+    <!-- Video -->
     <div class="lg:w-3/4">
       <div class="bg-gray-800 p-4 rounded-lg shadow-lg mb-4">
         <div class="flex flex-col md:flex-row gap-4">
-          <div class="flex-1">
-            <label for="roomName" class="block text-sm font-medium mb-1">Family Room Name</label>
-            <input id="roomName" type="text" placeholder="Enter family room name" 
-                   class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-          </div>
-          <div class="flex-1">
-            <label for="displayName" class="block text-sm font-medium mb-1">Your Display Name</label>
-            <input id="displayName" type="text" placeholder="Enter your name" value="User"
-                   class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-          </div>
-          <div class="flex items-end">
-            <button id="joinBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg font-medium transition-colors flex items-center justify-center">
-              <i class="fas fa-video mr-2"></i> Join Call
-            </button>
-          </div>
+          <input id="roomName" placeholder="Room name"
+                 class="flex-1 p-3 bg-gray-700 border rounded-lg">
+          <input id="displayName" placeholder="Your name" value="User"
+                 class="flex-1 p-3 bg-gray-700 border rounded-lg">
+          <button id="joinBtn" class="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg">
+            <i class="fas fa-video mr-2"></i> Join
+          </button>
         </div>
-        
-        <div class="mt-4 flex flex-wrap gap-2">
-          <button id="toggleVideoBtn" class="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg flex items-center" disabled>
+        <div class="mt-4 flex gap-2 flex-wrap">
+          <button id="toggleVideoBtn" class="bg-gray-700 p-2 rounded-lg" disabled>
             <i class="fas fa-video mr-1"></i> Video
           </button>
-          <button id="toggleAudioBtn" class="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg flex items-center" disabled>
+          <button id="toggleAudioBtn" class="bg-gray-700 p-2 rounded-lg" disabled>
             <i class="fas fa-microphone mr-1"></i> Audio
           </button>
-          <button id="screenShareBtn" class="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg flex items-center" disabled>
-            <i class="fas fa-desktop mr-1"></i> Share Screen
-          </button>
-          <button id="leaveBtn" class="bg-red-600 hover:bg-red-700 text-white p-2 rounded-lg flex items-center" disabled>
-            <i class="fas fa-phone-slash mr-1"></i> Leave Call
+          <button id="leaveBtn" class="bg-red-600 p-2 rounded-lg" disabled>
+            <i class="fas fa-phone-slash mr-1"></i> Leave
           </button>
         </div>
       </div>
-
       <div id="videoGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="text-center text-gray-500 py-8 col-span-2">
           <i class="fas fa-video text-4xl mb-4"></i>
@@ -77,205 +62,143 @@
       </div>
     </div>
 
+    <!-- Chat -->
     <div class="lg:w-1/4 bg-gray-800 rounded-lg shadow-lg flex flex-col h-[600px]">
-      <div class="p-4 border-b border-gray-700">
-        <h2 class="text-lg font-semibold flex items-center">
-          <i class="fas fa-comments mr-2 text-blue-400"></i>
-          Family Chat
-        </h2>
+      <div class="p-4 border-b border-gray-700 flex items-center">
+        <i class="fas fa-comments mr-2 text-blue-400"></i><h2>Chat</h2>
       </div>
-      
       <div id="chatMessages" class="flex-1 p-4 overflow-y-auto">
-        <div class="text-center text-gray-400 py-4">
-          No messages yet. Start the conversation!
-        </div>
+        <div class="text-center text-gray-400 py-4">No messages yet.</div>
       </div>
-      
-      <div class="p-4 border-t border-gray-700">
-        <div class="flex">
-          <input id="chatInput" type="text" placeholder="Type a message..." 
-                 class="flex-1 p-3 bg-gray-700 border border-gray-600 rounded-l-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" disabled>
-          <button id="sendBtn" class="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-r-lg font-medium transition-colors" disabled>
-            <i class="fas fa-paper-plane"></i>
-          </button>
-        </div>
+      <div class="p-4 border-t border-gray-700 flex">
+        <input id="chatInput" placeholder="Type..." disabled
+               class="flex-1 p-3 bg-gray-700 border rounded-l-lg">
+        <button id="sendBtn" disabled
+                class="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-r-lg">
+          <i class="fas fa-paper-plane"></i>
+        </button>
       </div>
     </div>
   </main>
 
-  <footer class="bg-gray-800 p-4 mt-8 text-center text-gray-400">
-    <p>Family Video Call &copy; 2023 - Stay connected with your loved ones</p>
-  </footer>
-
- <script>
-const SOCKET_SERVER_URL = window.location.hostname === 'localhost' 
+<script>
+const SOCKET_SERVER_URL = location.hostname === 'localhost' 
   ? 'http://localhost:3000' 
   : 'https://video-call-l2ij.onrender.com';
+const socket = io(SOCKET_SERVER_URL, { transports: ['websocket','polling'] });
 
-const socket = io(SOCKET_SERVER_URL, { transports: ['websocket', 'polling'] });
+const videoGrid=document.getElementById('videoGrid');
+const roomNameInput=document.getElementById('roomName');
+const displayNameInput=document.getElementById('displayName');
+const joinBtn=document.getElementById('joinBtn');
+const toggleVideoBtn=document.getElementById('toggleVideoBtn');
+const toggleAudioBtn=document.getElementById('toggleAudioBtn');
+const leaveBtn=document.getElementById('leaveBtn');
+const chatMessages=document.getElementById('chatMessages');
+const chatInput=document.getElementById('chatInput');
+const sendBtn=document.getElementById('sendBtn');
+const connectionStatus=document.getElementById('connectionStatus');
 
-const videoGrid = document.getElementById('videoGrid');
-const roomNameInput = document.getElementById('roomName');
-const displayNameInput = document.getElementById('displayName');
-const joinBtn = document.getElementById('joinBtn');
-const toggleVideoBtn = document.getElementById('toggleVideoBtn');
-const toggleAudioBtn = document.getElementById('toggleAudioBtn');
-const screenShareBtn = document.getElementById('screenShareBtn');
-const leaveBtn = document.getElementById('leaveBtn');
-const chatMessages = document.getElementById('chatMessages');
-const chatInput = document.getElementById('chatInput');
-const sendBtn = document.getElementById('sendBtn');
-const connectionStatus = document.getElementById('connectionStatus');
-
-let myStream = null;
-let isVideoOn = true;
-let isAudioOn = true;
-let currentRoom = null;
-let myDisplayName = 'User';
-const peers = {};
-const userDisplayNames = {};
+let myStream=null,isVideoOn=true,isAudioOn=true,currentRoom=null,myDisplayName='User';
+const peers={},userDisplayNames={};
 
 // Connection status UI
-function updateConnectionStatus(status) {
-  const indicator = connectionStatus.querySelector('.h-3');
-  const text = connectionStatus.querySelector('span:last-child');
-  indicator.className = 'h-3 w-3 rounded-full mr-2 ' + 
-    (status === 'connected' ? 'status-connected' : 
-     status === 'connecting' ? 'status-connecting pulse-connecting' : 'status-disconnected');
-  text.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+function updateConnectionStatus(status){
+  const indicator=connectionStatus.querySelector('.h-3');
+  const text=connectionStatus.querySelector('span:last-child');
+  indicator.className='h-3 w-3 rounded-full mr-2 '+
+    (status==='connected'?'status-connected':status==='connecting'?'status-connecting pulse-connecting':'status-disconnected');
+  text.textContent=status.charAt(0).toUpperCase()+status.slice(1);
 }
 
-// Initialize media
-async function initMedia() {
-  try {
-    myStream = await navigator.mediaDevices.getUserMedia({ 
-      video: { width: 1280, height: 720 }, 
-      audio: true 
-    });
-    myDisplayName = displayNameInput.value.trim() || `User${Math.random().toString(36).substr(2, 5)}`;
-    userDisplayNames[socket.id] = myDisplayName;
-    addVideoStream(myStream, myDisplayName, 'local', socket.id);
-
-    [toggleVideoBtn, toggleAudioBtn, screenShareBtn, leaveBtn, chatInput, sendBtn].forEach(b => b.disabled = false);
-    toggleVideoBtn.classList.add('bg-green-600');
-    toggleAudioBtn.classList.add('bg-green-600');
+// Init media
+async function initMedia(){
+  try{
+    myStream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+    myDisplayName=displayNameInput.value.trim()||`User${Math.random().toString(36).substr(2,5)}`;
+    userDisplayNames[socket.id]=myDisplayName;
+    addVideoStream(myStream,myDisplayName,'local',socket.id);
+    [toggleVideoBtn,toggleAudioBtn,leaveBtn,chatInput,sendBtn].forEach(b=>b.disabled=false);
+    toggleVideoBtn.classList.add('bg-green-600');toggleAudioBtn.classList.add('bg-green-600');
     return true;
-  } catch (err) {
-    alert('Could not access camera/microphone.');
-    return false;
-  }
+  }catch(err){alert('No camera/microphone.');return false;}
 }
 
-// Add video stream
-function addVideoStream(stream, userName, type, userId) {
-  const idKey = type === 'local' ? 'local' : userId;
+// Add video
+function addVideoStream(stream,userName,type,userId){
+  const idKey=type==='local'?'local':userId;
   removeVideoStream(idKey);
+  const c=document.createElement('div');
+  c.className='relative bg-black rounded-lg overflow-hidden video-container';c.id=`video-${idKey}`;
+  const v=document.createElement('video');
+  v.srcObject=stream;v.autoplay=true;v.playsInline=true;v.muted=(type==='local');
+  v.className='w-full h-full object-cover';
+  v.onloadedmetadata=()=>v.play().catch(err=>console.error('play failed',err));
+  const l=document.createElement('div');
+  l.className='absolute bottom-2 left-2 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-sm';
+  l.textContent=userName+(type==='local'?' (You)':'');
+  c.appendChild(v);c.appendChild(l);videoGrid.appendChild(c);
+  const ph=videoGrid.querySelector('.text-center');if(ph)ph.remove();
+}
+function removeVideoStream(idKey){const el=document.getElementById(`video-${idKey}`);if(el)el.remove();}
 
-  const container = document.createElement('div');
-  container.className = 'relative bg-black rounded-lg overflow-hidden video-container';
-  container.id = `video-${idKey}`;
-
-  const video = document.createElement('video');
-  video.srcObject = stream;
-  video.autoplay = true;
-  video.playsInline = true;
-  video.muted = (type === 'local');
-  video.className = 'w-full h-full object-cover';
-
-  const label = document.createElement('div');
-  label.className = 'absolute bottom-2 left-2 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-sm';
-  label.textContent = userName + (type === 'local' ? ' (You)' : '');
-
-  container.appendChild(video);
-  container.appendChild(label);
-  videoGrid.appendChild(container);
-
-  const placeholder = videoGrid.querySelector('.text-center');
-  if (placeholder) placeholder.remove();
+// Peer
+async function createPeerConnection(userId){
+  const p=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  myStream.getTracks().forEach(t=>p.addTrack(t,myStream));
+  p.ontrack=(e)=>{const n=userDisplayNames[userId]||`User ${userId.substring(0,6)}`;addVideoStream(e.streams[0],n,'remote',userId);};
+  p.onicecandidate=(e)=>{if(e.candidate&&currentRoom){socket.emit('ice-candidate',{candidate:e.candidate,to:userId,room:currentRoom});}};
+  return p;
 }
 
-function removeVideoStream(idKey) {
-  const el = document.getElementById(`video-${idKey}`);
-  if (el) el.remove();
+// Join
+joinBtn.addEventListener('click',async()=>{
+  const room=roomNameInput.value.trim().toLowerCase();if(!room){alert('Enter room name');return;}
+  if(!await initMedia())return;currentRoom=room;updateConnectionStatus('connecting');
+  socket.emit('join-room',room,myDisplayName);joinBtn.disabled=true;roomNameInput.disabled=true;displayNameInput.disabled=true;
+});
+
+// Socket
+socket.on('room-joined',async(users)=>{updateConnectionStatus('connected');
+  for(const u of users){userDisplayNames[u.id]=u.displayName;if(u.id!==socket.id)await createAndSendOffer(u.id);}
+});
+socket.on('user-connected',async(id,name)=>{userDisplayNames[id]=name;await createAndSendOffer(id);});
+socket.on('offer',async({offer,from})=>{const p=await createPeerConnection(from);await p.setRemoteDescription(new RTCSessionDescription(offer));
+  const a=await p.createAnswer();await p.setLocalDescription(a);socket.emit('answer',{answer:a,to:from,room:currentRoom});peers[from]=p;});
+socket.on('answer',async({answer,from})=>{if(peers[from])await peers[from].setRemoteDescription(new RTCSessionDescription(answer));});
+socket.on('ice-candidate',async({candidate,from})=>{if(peers[from])await peers[from].addIceCandidate(new RTCIceCandidate(candidate));});
+socket.on('user-disconnected',(id)=>{if(peers[id]){peers[id].close();delete peers[id];}removeVideoStream(id);delete userDisplayNames[id];});
+
+// Offers
+async function createAndSendOffer(id){const p=await createPeerConnection(id);const o=await p.createOffer();await p.setLocalDescription(o);
+  socket.emit('offer',{offer:o,to:id,room:currentRoom});peers[id]=p;}
+
+// Chat
+function sendMessage(){
+  const msg=chatInput.value.trim();if(!msg||!currentRoom)return;
+  addChatMessage(myDisplayName,msg,'outgoing');
+  socket.emit('chat-message',{room:currentRoom,message:msg,userName:myDisplayName});
+  chatInput.value='';
 }
-
-// Create PeerConnection
-async function createPeerConnection(userId) {
-  const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-  myStream.getTracks().forEach(track => peer.addTrack(track, myStream));
-  peer.ontrack = (e) => {
-    const name = userDisplayNames[userId] || `User ${userId.substring(0,6)}`;
-    addVideoStream(e.streams[0], name, 'remote', userId);
-  };
-  peer.onicecandidate = (e) => {
-    if (e.candidate && currentRoom) {
-      socket.emit('ice-candidate', { candidate: e.candidate, to: userId, room: currentRoom });
-    }
-  };
-  return peer;
+function addChatMessage(user,message,type='incoming'){
+  const m=document.createElement('div');m.className=`mb-3 ${type==='outgoing'?'text-right':''}`;
+  m.innerHTML=`<div class="inline-block p-3 rounded-lg max-w-xs ${type==='outgoing'?'bg-blue-600 text-white':'bg-gray-700 text-white'}">
+    <div class="text-xs font-semibold mb-1 ${type==='outgoing'?'text-blue-200':'text-gray-400'}">${user}</div>
+    <div class="text-sm">${message}</div></div>`;
+  const ph=chatMessages.querySelector('.text-center');if(ph)ph.remove();
+  chatMessages.appendChild(m);chatMessages.scrollTop=chatMessages.scrollHeight;
 }
+sendBtn.addEventListener('click',sendMessage);
+chatInput.addEventListener('keypress',(e)=>{if(e.key==='Enter')sendMessage();});
+socket.on('chat-message',({message,userId,userName})=>{addChatMessage(userName||`User ${userId.substring(0,6)}`,message,'incoming');});
 
-// Join room
-joinBtn.addEventListener('click', async () => {
-  const room = roomNameInput.value.trim().toLowerCase();
-  if (!room) { alert('Enter room name.'); return; }
-  if (!await initMedia()) return;
-
-  currentRoom = room;
-  updateConnectionStatus('connecting');
-  socket.emit('join-room', room, myDisplayName);
-
-  joinBtn.disabled = true;
-  roomNameInput.disabled = true;
-  displayNameInput.disabled = true;
+// Toggle video/audio
+toggleVideoBtn.addEventListener('click',()=>{const t=myStream.getVideoTracks()[0];if(!t)return;isVideoOn=!isVideoOn;t.enabled=isVideoOn;
+  toggleVideoBtn.classList.toggle('bg-green-600',isVideoOn);toggleVideoBtn.classList.toggle('bg-gray-700',!isVideoOn);
 });
-
-// Socket events
-socket.on('room-joined', async (users) => {
-  updateConnectionStatus('connected');
-  users.forEach(async user => {
-    userDisplayNames[user.id] = user.displayName;
-    if (user.id !== socket.id) await createAndSendOffer(user.id);
-  });
+toggleAudioBtn.addEventListener('click',()=>{const t=myStream.getAudioTracks()[0];if(!t)return;isAudioOn=!isAudioOn;t.enabled=isAudioOn;
+  toggleAudioBtn.classList.toggle('bg-green-600',isAudioOn);toggleAudioBtn.classList.toggle('bg-gray-700',!isAudioOn);
 });
-
-socket.on('user-connected', async (userId, displayName) => {
-  userDisplayNames[userId] = displayName;
-  await createAndSendOffer(userId);
-});
-
-socket.on('offer', async ({ offer, from }) => {
-  const peer = await createPeerConnection(from);
-  await peer.setRemoteDescription(new RTCSessionDescription(offer));
-  const answer = await peer.createAnswer();
-  await peer.setLocalDescription(answer);
-  socket.emit('answer', { answer, to: from, room: currentRoom });
-  peers[from] = peer;
-});
-
-socket.on('answer', async ({ answer, from }) => {
-  if (peers[from]) await peers[from].setRemoteDescription(new RTCSessionDescription(answer));
-});
-
-socket.on('ice-candidate', async ({ candidate, from }) => {
-  if (peers[from]) await peers[from].addIceCandidate(new RTCIceCandidate(candidate));
-});
-
-socket.on('user-disconnected', (userId) => {
-  if (peers[userId]) { peers[userId].close(); delete peers[userId]; }
-  removeVideoStream(userId);
-  delete userDisplayNames[userId];
-});
-
-// Offer helper
-async function createAndSendOffer(userId) {
-  const peer = await createPeerConnection(userId);
-  const offer = await peer.createOffer();
-  await peer.setLocalDescription(offer);
-  socket.emit('offer', { offer, to: userId, room: currentRoom });
-  peers[userId] = peer;
-}
 </script>
-
 </body>
 </html>
