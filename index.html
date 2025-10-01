@@ -61,16 +61,16 @@
         </div>
         
         <div class="mt-4 flex flex-wrap gap-2">
-          <button id="toggleVideoBtn" class="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg flex items-center">
+          <button id="toggleVideoBtn" class="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg flex items-center" disabled>
             <i class="fas fa-video mr-1"></i> Video
           </button>
-          <button id="toggleAudioBtn" class="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg flex items-center">
+          <button id="toggleAudioBtn" class="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg flex items-center" disabled>
             <i class="fas fa-microphone mr-1"></i> Audio
           </button>
-          <button id="screenShareBtn" class="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg flex items-center">
+          <button id="screenShareBtn" class="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg flex items-center" disabled>
             <i class="fas fa-desktop mr-1"></i> Share Screen
           </button>
-          <button id="leaveBtn" class="bg-red-600 hover:bg-red-700 text-white p-2 rounded-lg flex items-center">
+          <button id="leaveBtn" class="bg-red-600 hover:bg-red-700 text-white p-2 rounded-lg flex items-center" disabled>
             <i class="fas fa-phone-slash mr-1"></i> Leave Call
           </button>
         </div>
@@ -141,6 +141,7 @@
   let myDisplayName = 'You';
   const peers = {};
   const userDisplayNames = {};
+  const pendingIceCandidates = {};
 
   // Initialize media and UI
   async function initMedia() {
@@ -157,9 +158,13 @@
       addVideoStream(myStream, myDisplayName, 'local');
       updateConnectionStatus('connected');
       
-      // Enable chat
+      // Enable chat and controls
       chatInput.disabled = false;
       sendBtn.disabled = false;
+      toggleVideoBtn.disabled = false;
+      toggleAudioBtn.disabled = false;
+      screenShareBtn.disabled = false;
+      leaveBtn.disabled = false;
       
       // Update UI
       joinBtn.disabled = true;
@@ -488,6 +493,10 @@
     joinBtn.disabled = false;
     roomNameInput.disabled = false;
     displayNameInput.disabled = false;
+    toggleVideoBtn.disabled = true;
+    toggleAudioBtn.disabled = true;
+    screenShareBtn.disabled = true;
+    leaveBtn.disabled = true;
     
     // Reset buttons
     toggleVideoBtn.classList.remove('bg-green-600');
@@ -511,6 +520,7 @@
     // Clear peers and display names
     Object.keys(peers).forEach(key => delete peers[key]);
     Object.keys(userDisplayNames).forEach(key => delete userDisplayNames[key]);
+    Object.keys(pendingIceCandidates).forEach(key => delete pendingIceCandidates[key]);
     
     updateConnectionStatus('disconnected');
   }
@@ -571,6 +581,8 @@
 
   // Handle WebRTC connection
   async function createPeerConnection(userId) {
+    console.log('Creating peer connection for:', userId);
+    
     const peer = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -585,6 +597,7 @@
 
     // Handle incoming tracks
     peer.ontrack = (event) => {
+      console.log('Received remote track from:', userId);
       if (!peers[userId]) {
         const displayName = userDisplayNames[userId] || `User ${userId.substring(0, 6)}`;
         addVideoStream(event.streams[0], displayName, 'remote');
@@ -595,6 +608,7 @@
     // Handle ICE candidates
     peer.onicecandidate = (event) => {
       if (event.candidate) {
+        console.log('Sending ICE candidate to:', userId);
         socket.emit('ice-candidate', { 
           candidate: event.candidate, 
           to: userId, 
@@ -608,7 +622,27 @@
       console.log(`Connection state with ${userId}: ${peer.connectionState}`);
     };
 
+    // Handle ICE connection state
+    peer.oniceconnectionstatechange = () => {
+      console.log(`ICE connection state with ${userId}: ${peer.iceConnectionState}`);
+    };
+
     return peer;
+  }
+
+  // Process pending ICE candidates
+  async function processPendingIceCandidates(userId, peer) {
+    if (pendingIceCandidates[userId] && pendingIceCandidates[userId].length > 0) {
+      console.log('Processing pending ICE candidates for:', userId);
+      for (const candidate of pendingIceCandidates[userId]) {
+        try {
+          await peer.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          console.error('Error adding pending ICE candidate:', err);
+        }
+      }
+      pendingIceCandidates[userId] = [];
+    }
   }
 
   // Join room
@@ -646,6 +680,9 @@
     // Store the display name
     userDisplayNames[userId] = displayName;
     
+    // Initialize pending ICE candidates queue
+    pendingIceCandidates[userId] = [];
+    
     // Create offer for the new user
     const peer = await createPeerConnection(userId);
     const offer = await peer.createOffer();
@@ -665,18 +702,26 @@
     
     // Create answer for the offering user
     const peer = await createPeerConnection(from);
-    await peer.setRemoteDescription(new RTCSessionDescription(offer));
     
-    const answer = await peer.createAnswer();
-    await peer.setLocalDescription(answer);
-    
-    socket.emit('answer', { 
-      answer, 
-      to: from, 
-      room: currentRoom 
-    });
-    
-    peers[from] = peer;
+    try {
+      await peer.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      
+      socket.emit('answer', { 
+        answer, 
+        to: from, 
+        room: currentRoom 
+      });
+      
+      peers[from] = peer;
+      
+      // Process any pending ICE candidates
+      await processPendingIceCandidates(from, peer);
+      
+    } catch (err) {
+      console.error('Error handling offer:', err);
+    }
   });
 
   socket.on('answer', async ({ answer, from }) => {
@@ -684,7 +729,20 @@
     
     const peer = peers[from];
     if (peer) {
-      await peer.setRemoteDescription(new RTCSessionDescription(answer));
+      try {
+        // Check if we can set remote description
+        if (peer.signalingState === 'have-local-offer') {
+          await peer.setRemoteDescription(new RTCSessionDescription(answer));
+          console.log('Successfully set remote description for:', from);
+          
+          // Process any pending ICE candidates
+          await processPendingIceCandidates(from, peer);
+        } else {
+          console.warn('Cannot set remote answer in state:', peer.signalingState);
+        }
+      } catch (err) {
+        console.error('Error setting remote description:', err);
+      }
     }
   });
 
@@ -693,7 +751,29 @@
     
     const peer = peers[from];
     if (peer) {
-      await peer.addIceCandidate(new RTCIceCandidate(candidate));
+      try {
+        // Only add ICE candidates if remote description is set
+        if (peer.remoteDescription) {
+          await peer.addIceCandidate(new RTCIceCandidate(candidate));
+          console.log('Successfully added ICE candidate from:', from);
+        } else {
+          // Store candidate for later
+          if (!pendingIceCandidates[from]) {
+            pendingIceCandidates[from] = [];
+          }
+          pendingIceCandidates[from].push(candidate);
+          console.log('Stored pending ICE candidate from:', from);
+        }
+      } catch (err) {
+        console.error('Error adding ICE candidate:', err);
+      }
+    } else {
+      // Peer connection doesn't exist yet, store candidate
+      if (!pendingIceCandidates[from]) {
+        pendingIceCandidates[from] = [];
+      }
+      pendingIceCandidates[from].push(candidate);
+      console.log('Stored pending ICE candidate (no peer yet) from:', from);
     }
   });
 
@@ -705,6 +785,7 @@
       delete peers[userId];
       removeVideoStream(`remote-${userDisplayNames[userId] || userId}`);
       delete userDisplayNames[userId];
+      delete pendingIceCandidates[userId];
     }
   });
 
@@ -713,8 +794,9 @@
   });
 
   socket.on('user-media-update', ({ userId, video, audio }) => {
-    const videoStatus = document.getElementById(`video-status-remote-${userDisplayNames[userId] || userId}`);
-    const audioStatus = document.getElementById(`audio-status-remote-${userDisplayNames[userId] || userId}`);
+    const displayName = userDisplayNames[userId] || userId;
+    const videoStatus = document.getElementById(`video-status-remote-${displayName}`);
+    const audioStatus = document.getElementById(`audio-status-remote-${displayName}`);
     
     if (videoStatus) {
       videoStatus.className = video ? 
@@ -734,11 +816,14 @@
     userDisplayNames[userId] = displayName;
     
     // Update the video label if the user is in the call
-    const videoElement = document.getElementById(`video-remote-${userDisplayNames[userId] || userId}`);
+    const oldDisplayName = Object.keys(userDisplayNames).find(key => userDisplayNames[key] === displayName && key !== userId);
+    const videoElement = document.getElementById(`video-remote-${oldDisplayName || userId}`);
     if (videoElement) {
       const label = videoElement.querySelector('.absolute.bottom-2');
       if (label) {
         label.textContent = displayName;
+        // Update the video element ID
+        videoElement.id = `video-remote-${displayName}`;
       }
     }
   });
@@ -751,18 +836,22 @@
     users.forEach(user => {
       if (user.id !== socket.id) {
         userDisplayNames[user.id] = user.displayName;
+        pendingIceCandidates[user.id] = [];
         
         // Create connection with existing user
         createPeerConnection(user.id).then(peer => {
-          peer.createOffer().then(offer => {
-            peer.setLocalDescription(offer);
+          return peer.createOffer().then(offer => {
+            return peer.setLocalDescription(offer);
+          }).then(() => {
             socket.emit('offer', {
-              offer,
+              offer: peer.localDescription,
               to: user.id,
               room: currentRoom
             });
+            peers[user.id] = peer;
           });
-          peers[user.id] = peer;
+        }).catch(err => {
+          console.error('Error creating offer for existing user:', err);
         });
       }
     });
@@ -772,6 +861,15 @@
   window.addEventListener('beforeunload', () => {
     if (currentRoom) {
       socket.emit('leave-room', currentRoom);
+    }
+  });
+
+  // Handle visibility change (tab switch)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      console.log('Page hidden');
+    } else {
+      console.log('Page visible');
     }
   });
   </script>
