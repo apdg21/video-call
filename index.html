@@ -135,8 +135,18 @@ function addVideoStream(stream,userName,type,userId){
 }
 function removeVideoStream(idKey){const el=document.getElementById(`video-${idKey}`);if(el)el.remove();}
 
+// 🔧 PeerConnection with STUN + TURN
 async function createPeerConnection(userId){
-  const p=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  const p=new RTCPeerConnection({
+    iceServers:[
+      { urls:'stun:stun.l.google.com:19302' },
+      {
+        urls:'turn:relay1.expressturn.com:3478',
+        username:'efree',
+        credential:'efree'
+      }
+    ]
+  });
   if(myStream){ myStream.getTracks().forEach(t=>p.addTrack(t,myStream)); }
   p.ontrack=(e)=>{console.log('📹 Remote track from',userId);const n=userDisplayNames[userId]||`User ${userId.substring(0,6)}`;
     addVideoStream(e.streams[0],n,'remote',userId);};
@@ -174,7 +184,7 @@ socket.on('user-connected',async(id,name)=>{console.log('User joined',id);userDi
 socket.on('offer',async({offer,from})=>{
   console.log('📨 Got offer from',from);
   const p=await createPeerConnection(from);
-  peers[from]=p; // store immediately
+  peers[from]=p;
   await p.setRemoteDescription(new RTCSessionDescription(offer));
   const a=await p.createAnswer();
   await p.setLocalDescription(a);
@@ -196,7 +206,7 @@ socket.on('user-disconnected',(id)=>{
 // Offer helper
 async function createAndSendOffer(id){
   const p=await createPeerConnection(id);
-  peers[id]=p; // store immediately
+  peers[id]=p;
   const o=await p.createOffer();
   await p.setLocalDescription(o);
   socket.emit('offer',{offer:o,to:id,room:currentRoom});
