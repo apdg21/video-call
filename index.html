@@ -127,31 +127,106 @@ function addVideoStream(stream,userName,type,userId){
   const v=document.createElement('video');
   v.srcObject=stream;v.autoplay=true;v.playsInline=true;v.muted=(type==='local');
   v.className='w-full h-full object-cover';
-  v.onloadedmetadata=()=>v.play().catch(err=>console.error('Play failed',err));
+  
+  // Improved video event handling
+  v.onloadedmetadata=()=>{
+    console.log('✅ Video metadata loaded for', userName);
+    v.play().catch(err=>console.error('Play failed',err));
+  };
+  
+  v.onplay=()=>{
+    console.log('🎬 Video started playing for', userName);
+  };
+  
+  v.onresize=()=>{
+    console.log('📐 Video resized for', userName);
+  };
+  
   const l=document.createElement('div');l.className='absolute bottom-2 left-2 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-sm';
   l.textContent=userName+(type==='local'?' (You)':'');
   c.appendChild(v);c.appendChild(l);videoGrid.appendChild(c);
   const ph=videoGrid.querySelector('.text-center');if(ph)ph.remove();
+  
+  console.log('✅ Added video stream for', userName);
 }
+
 function removeVideoStream(idKey){const el=document.getElementById(`video-${idKey}`);if(el)el.remove();}
 
-// 🔧 PeerConnection with STUN + TURN
+// 🔧 Improved PeerConnection with better STUN servers
 async function createPeerConnection(userId){
+  console.log('🔗 Creating peer connection for', userId);
+  
   const p=new RTCPeerConnection({
     iceServers:[
       { urls:'stun:stun.l.google.com:19302' },
+      { urls:'stun:stun1.l.google.com:19302' },
+      { urls:'stun:stun2.l.google.com:19302' },
+      { urls:'stun:stun3.l.google.com:19302' },
+      { urls:'stun:stun4.l.google.com:19302' },
+      // Free TURN servers for fallback
       {
-        urls:'turn:relay1.expressturn.com:3478',
-        username:'efree',
-        credential:'efree'
+        urls: 'turn:numb.viagenie.ca',
+        username: 'webrtc@live.com',
+        credential: 'muazkh'
       }
-    ]
+    ],
+    iceCandidatePoolSize: 10
   });
-  if(myStream){ myStream.getTracks().forEach(t=>p.addTrack(t,myStream)); }
-  p.ontrack=(e)=>{console.log('📹 Remote track from',userId);const n=userDisplayNames[userId]||`User ${userId.substring(0,6)}`;
-    addVideoStream(e.streams[0],n,'remote',userId);};
-  p.onicecandidate=(e)=>{if(e.candidate&&currentRoom){socket.emit('ice-candidate',{candidate:e.candidate,to:userId,room:currentRoom});}};
-  p.onconnectionstatechange=()=>console.log(`Peer ${userId} state`,p.connectionState);
+  
+  // Add local tracks
+  if(myStream){ 
+    myStream.getTracks().forEach(track=>{
+      console.log('➕ Adding track:', track.kind);
+      p.addTrack(track,myStream);
+    });
+  }
+
+  // Improved track handling
+  p.ontrack=(event)=>{
+    console.log('📹 Remote track received from', userId, event.streams);
+    console.log('Tracks:', event.tracks);
+    
+    if(event.streams && event.streams[0]){
+      const remoteStream=event.streams[0];
+      const videoTracks=remoteStream.getVideoTracks();
+      const audioTracks=remoteStream.getAudioTracks();
+      
+      console.log('🎥 Video tracks:', videoTracks.length);
+      console.log('🎤 Audio tracks:', audioTracks.length);
+      
+      if(videoTracks.length>0){
+        videoTracks[0].onunmute=()=>{
+          console.log('🎬 Video track unmuted for', userId);
+        };
+        
+        videoTracks[0].onmute=()=>{
+          console.log('🔇 Video track muted for', userId);
+        };
+      }
+      
+      const displayName=userDisplayNames[userId]||`User ${userId.substring(0,6)}`;
+      addVideoStream(remoteStream,displayName,'remote',userId);
+    }
+  };
+
+  p.oniceconnectionstatechange=()=>{
+    console.log(`❄️ ICE state for ${userId}:`, p.iceConnectionState);
+    if(p.iceConnectionState==='connected'||p.iceConnectionState==='completed'){
+      console.log('✅ Peer connection established with', userId);
+    }
+  };
+
+  p.onconnectionstatechange=()=>{
+    console.log(`🔗 Connection state for ${userId}:`, p.connectionState);
+  };
+
+  p.onicecandidate=(event)=>{
+    if(event.candidate&&currentRoom){
+      console.log('❄️ Sending ICE candidate to', userId);
+      socket.emit('ice-candidate',{candidate:event.candidate,to:userId,room:currentRoom});
+    }
+  };
+
   return p;
 }
 
@@ -177,39 +252,97 @@ leaveBtn.addEventListener('click',()=>{
 });
 
 // Socket events
-socket.on('room-joined',async(users)=>{updateConnectionStatus('connected');
-  for(const u of users){userDisplayNames[u.id]=u.displayName;if(u.id!==socket.id)await createAndSendOffer(u.id);}
-});
-socket.on('user-connected',async(id,name)=>{console.log('User joined',id);userDisplayNames[id]=name;await createAndSendOffer(id);});
-socket.on('offer',async({offer,from})=>{
-  console.log('📨 Got offer from',from);
-  const p=await createPeerConnection(from);
-  peers[from]=p;
-  await p.setRemoteDescription(new RTCSessionDescription(offer));
-  const a=await p.createAnswer();
-  await p.setLocalDescription(a);
-  socket.emit('answer',{answer:a,to:from,room:currentRoom});
-});
-socket.on('answer',async({answer,from})=>{
-  console.log('📨 Got answer from',from);
-  if(peers[from])await peers[from].setRemoteDescription(new RTCSessionDescription(answer));
-});
-socket.on('ice-candidate',async({candidate,from})=>{
-  if(peers[from]){try{await peers[from].addIceCandidate(new RTCIceCandidate(candidate));}catch(e){console.error(e);}}
-});
-socket.on('user-disconnected',(id)=>{
-  console.log('❌ User left',id);
-  if(peers[id]){peers[id].close();delete peers[id];}
-  removeVideoStream(id);delete userDisplayNames[id];
+socket.on('room-joined',async(users)=>{
+  updateConnectionStatus('connected');
+  console.log('👥 Users in room:', users);
+  
+  for(const u of users){
+    if(u.id!==socket.id){
+      userDisplayNames[u.id]=u.displayName;
+      await createAndSendOffer(u.id);
+    }
+  }
 });
 
-// Offer helper
+socket.on('user-connected',async(id,name)=>{
+  console.log('👋 User joined', id, name);
+  userDisplayNames[id]=name;
+  await createAndSendOffer(id);
+});
+
+socket.on('offer',async({offer,from})=>{
+  console.log('📨 Got offer from', from);
+  try{
+    const p=await createPeerConnection(from);
+    peers[from]=p;
+    await p.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer=await p.createAnswer();
+    await p.setLocalDescription(answer);
+    socket.emit('answer',{answer:answer,to:from,room:currentRoom});
+    console.log('📤 Sent answer to', from);
+  }catch(error){
+    console.error('Error handling offer:', error);
+  }
+});
+
+socket.on('answer',async({answer,from})=>{
+  console.log('📨 Got answer from', from);
+  try{
+    if(peers[from]){
+      await peers[from].setRemoteDescription(new RTCSessionDescription(answer));
+      console.log('✅ Set remote description for', from);
+    }
+  }catch(error){
+    console.error('Error handling answer:', error);
+  }
+});
+
+socket.on('ice-candidate',async({candidate,from})=>{
+  console.log('❄️ Got ICE candidate from', from);
+  if(peers[from]){
+    try{
+      await peers[from].addIceCandidate(new RTCIceCandidate(candidate));
+      console.log('✅ Added ICE candidate for', from);
+    }catch(e){
+      console.error('Error adding ICE candidate:', e);
+    }
+  }
+});
+
+socket.on('user-disconnected',(id)=>{
+  console.log('❌ User left', id);
+  if(peers[id]){
+    peers[id].close();
+    delete peers[id];
+  }
+  removeVideoStream(id);
+  delete userDisplayNames[id];
+});
+
+// Improved offer creation
 async function createAndSendOffer(id){
-  const p=await createPeerConnection(id);
-  peers[id]=p;
-  const o=await p.createOffer();
-  await p.setLocalDescription(o);
-  socket.emit('offer',{offer:o,to:id,room:currentRoom});
+  try{
+    console.log('📤 Creating offer for', id);
+    const p=await createPeerConnection(id);
+    peers[id]=p;
+    
+    const offer=await p.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true
+    });
+    
+    await p.setLocalDescription(offer);
+    
+    socket.emit('offer',{
+      offer: offer,
+      to: id,
+      room: currentRoom
+    });
+    
+    console.log('📤 Sent offer to', id);
+  }catch(error){
+    console.error('Error creating offer:', error);
+  }
 }
 
 // Chat
@@ -219,6 +352,7 @@ function sendMessage(){
   socket.emit('chat-message',{room:currentRoom,message:msg,userName:myDisplayName});
   chatInput.value='';
 }
+
 function addChatMessage(user,message,type='incoming'){
   const m=document.createElement('div');m.className=`mb-3 ${type==='outgoing'?'text-right':''}`;
   m.innerHTML=`<div class="inline-block p-3 rounded-lg max-w-xs ${type==='outgoing'?'bg-blue-600 text-white':'bg-gray-700 text-white'}">
@@ -227,19 +361,63 @@ function addChatMessage(user,message,type='incoming'){
   const ph=chatMessages.querySelector('.text-center');if(ph)ph.remove();
   chatMessages.appendChild(m);chatMessages.scrollTop=chatMessages.scrollHeight;
 }
+
 sendBtn.addEventListener('click',sendMessage);
 chatInput.addEventListener('keypress',(e)=>{if(e.key==='Enter')sendMessage();});
+
 socket.on('chat-message',({message,userId,userName})=>{
   addChatMessage(userName||`User ${userId.substring(0,6)}`,message,'incoming');
 });
 
 // Toggle video/audio
-toggleVideoBtn.addEventListener('click',()=>{const t=myStream.getVideoTracks()[0];if(!t)return;isVideoOn=!isVideoOn;t.enabled=isVideoOn;
-  toggleVideoBtn.classList.toggle('bg-green-600',isVideoOn);toggleVideoBtn.classList.toggle('bg-gray-700',!isVideoOn);
+toggleVideoBtn.addEventListener('click',()=>{
+  const t=myStream.getVideoTracks()[0];
+  if(!t)return;
+  isVideoOn=!isVideoOn;
+  t.enabled=isVideoOn;
+  toggleVideoBtn.classList.toggle('bg-green-600',isVideoOn);
+  toggleVideoBtn.classList.toggle('bg-gray-700',!isVideoOn);
+  
+  // Notify others
+  if(currentRoom){
+    socket.emit('user-media-update',{
+      room: currentRoom,
+      video: isVideoOn,
+      audio: isAudioOn
+    });
+  }
 });
-toggleAudioBtn.addEventListener('click',()=>{const t=myStream.getAudioTracks()[0];if(!t)return;isAudioOn=!isAudioOn;t.enabled=isAudioOn;
-  toggleAudioBtn.classList.toggle('bg-green-600',isAudioOn);toggleAudioBtn.classList.toggle('bg-gray-700',!isAudioOn);
+
+toggleAudioBtn.addEventListener('click',()=>{
+  const t=myStream.getAudioTracks()[0];
+  if(!t)return;
+  isAudioOn=!isAudioOn;
+  t.enabled=isAudioOn;
+  toggleAudioBtn.classList.toggle('bg-green-600',isAudioOn);
+  toggleAudioBtn.classList.toggle('bg-gray-700',!isAudioOn);
+  
+  // Notify others
+  if(currentRoom){
+    socket.emit('user-media-update',{
+      room: currentRoom,
+      video: isVideoOn,
+      audio: isAudioOn
+    });
+  }
 });
+
+// Debug: Log peer states periodically
+setInterval(()=>{
+  if(Object.keys(peers).length>0){
+    console.log('--- Active Peers Status ---');
+    Object.entries(peers).forEach(([id,peer])=>{
+      console.log(`Peer ${id}:`,{
+        connectionState:peer.connectionState,
+        iceConnectionState:peer.iceConnectionState
+      });
+    });
+  }
+},10000);
 </script>
 </body>
 </html>
