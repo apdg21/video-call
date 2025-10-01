@@ -15,7 +15,7 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
 });
 
-app.get('/favicon.ico', (req, res) => res.status(204).end()); // Suppress favicon 404
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Store room data
 const rooms = {};
@@ -23,7 +23,7 @@ const rooms = {};
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
   
-  socket.on('join-room', (room) => {
+  socket.on('join-room', (room, displayName) => {
     socket.join(room);
     
     // Initialize room if it doesn't exist
@@ -31,48 +31,27 @@ io.on('connection', (socket) => {
       rooms[room] = { users: [] };
     }
     
-    // Add user to room
-    if (!rooms[room].users.includes(socket.id)) {
-      rooms[room].users.push(socket.id);
+    // Add user to room with display name
+    const userInfo = { id: socket.id, displayName };
+    if (!rooms[room].users.find(u => u.id === socket.id)) {
+      rooms[room].users.push(userInfo);
     }
     
     // Notify the joining user about existing users
     socket.emit('room-joined', rooms[room].users);
     
     // Notify others about the new user
-    socket.to(room).emit('user-connected', socket.id);
+    socket.to(room).emit('user-connected', socket.id, displayName);
     
     socket.on('disconnect', () => {
       console.log('User disconnected:', socket.id);
-      
-      // Remove user from room
-      if (rooms[room]) {
-        rooms[room].users = rooms[room].users.filter(id => id !== socket.id);
-        
-        // Delete room if empty
-        if (rooms[room].users.length === 0) {
-          delete rooms[room];
-        }
-      }
-      
-      socket.to(room).emit('user-disconnected', socket.id);
+      handleUserLeave(room, socket.id);
     });
   });
 
   socket.on('leave-room', (room) => {
     socket.leave(room);
-    
-    // Remove user from room
-    if (rooms[room]) {
-      rooms[room].users = rooms[room].users.filter(id => id !== socket.id);
-      
-      // Delete room if empty
-      if (rooms[room].users.length === 0) {
-        delete rooms[room];
-      }
-    }
-    
-    socket.to(room).emit('user-disconnected', socket.id);
+    handleUserLeave(room, socket.id);
   });
 
   socket.on('offer', ({ offer, to, room }) => {
@@ -87,11 +66,11 @@ io.on('connection', (socket) => {
     socket.to(to).emit('ice-candidate', { candidate, from: socket.id });
   });
 
-  socket.on('chat-message', ({ room, message, userId }) => {
+  socket.on('chat-message', ({ room, message, userId, userName }) => {
     socket.to(room).emit('chat-message', { 
       message, 
       userId,
-      userName: `User ${userId.substring(0, 6)}`
+      userName
     });
   });
 
@@ -99,11 +78,32 @@ io.on('connection', (socket) => {
     socket.to(room).emit('user-media-update', { userId, video, audio });
   });
 
-  socket.on('user-connected', ({ to, room, from }) => {
-    socket.to(to).emit('user-connected', from);
+  socket.on('update-display-name', ({ room, userId, displayName }) => {
+    // Update display name in room data
+    if (rooms[room]) {
+      const user = rooms[room].users.find(u => u.id === userId);
+      if (user) {
+        user.displayName = displayName;
+      }
+    }
+    socket.to(room).emit('update-display-name', { userId, displayName });
   });
+
+  function handleUserLeave(room, userId) {
+    if (rooms[room]) {
+      rooms[room].users = rooms[room].users.filter(u => u.id !== userId);
+      
+      // Delete room if empty
+      if (rooms[room].users.length === 0) {
+        delete rooms[room];
+      }
+    }
+    
+    socket.to(room).emit('user-disconnected', userId);
+  }
 });
 
-server.listen(process.env.PORT || 3000, () => {
-  console.log('Signaling server running on port', process.env.PORT || 3000);
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log('Signaling server running on port', PORT);
 });
