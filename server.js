@@ -8,13 +8,10 @@ const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-// Serve static files
 app.use(express.static(__dirname));
-
 app.get('/', (req, res) => res.sendFile(__dirname + '/index.html'));
 app.get('/health', (req, res) => res.status(200).json({ status: 'OK' }));
 
-// Store active rooms and users
 const rooms = new Map();
 
 io.on('connection', (socket) => {
@@ -31,81 +28,105 @@ io.on('connection', (socket) => {
 
       socket.join(roomName);
 
-      if (!rooms.has(roomName)) rooms.set(roomName, new Map());
+      if (!rooms.has(roomName)) {
+        rooms.set(roomName, new Map());
+      }
       const room = rooms.get(roomName);
 
       // Add/update user
       room.set(socket.id, {
         id: socket.id,
-        displayName: displayName || `User${socket.id.substring(0, 6)}`
+        displayName: displayName || `User${socket.id.substring(0, 6)}`,
+        joinedAt: Date.now()
       });
 
       console.log(`📊 Room ${roomName} has ${room.size} users`);
 
-      // Send the full room user list (including self)
-      socket.emit('room-joined', Array.from(room.values()));
+      // Get existing users (excluding self)
+      const otherUsers = Array.from(room.values()).filter(user => user.id !== socket.id);
+      
+      // Send room info to the new user
+      socket.emit('room-joined', {
+        users: otherUsers,
+        room: roomName
+      });
 
       // Notify others about new user
-      socket.to(roomName).emit('user-connected', socket.id, displayName);
+      socket.to(roomName).emit('user-connected', {
+        id: socket.id,
+        displayName: displayName || `User${socket.id.substring(0, 6)}`
+      });
+
     } catch (err) {
       console.error('❌ Error join-room:', err);
       socket.emit('error', { message: 'Failed to join room' });
     }
   });
 
-  socket.on('offer', ({ offer, to, room }) => {
-    socket.to(to).emit('offer', { offer, from: socket.id });
-  });
-
-  socket.on('answer', ({ answer, to, room }) => {
-    socket.to(to).emit('answer', { answer, from: socket.id });
-  });
-
-  socket.on('ice-candidate', ({ candidate, to, room }) => {
-    socket.to(to).emit('ice-candidate', { candidate, from: socket.id });
-  });
-
-  socket.on('chat-message', ({ room, message, userName }) => {
-    socket.to(room).emit('chat-message', {
-      message, userId: socket.id, userName
+  socket.on('offer', (data) => {
+    console.log(`📤 Offer from ${socket.id} to ${data.to}`);
+    socket.to(data.to).emit('offer', {
+      offer: data.offer,
+      from: socket.id,
+      room: data.room
     });
   });
 
-  socket.on('user-media-update', ({ room, video, audio }) => {
-    socket.to(room).emit('user-media-update', {
-      userId: socket.id, video, audio
+  socket.on('answer', (data) => {
+    console.log(`📤 Answer from ${socket.id} to ${data.to}`);
+    socket.to(data.to).emit('answer', {
+      answer: data.answer,
+      from: socket.id,
+      room: data.room
     });
   });
 
-  socket.on('update-display-name', ({ room, displayName }) => {
-    if (rooms.has(room)) {
-      const roomData = rooms.get(room);
-      if (roomData.has(socket.id)) {
-        roomData.get(socket.id).displayName = displayName;
-      }
-    }
-    socket.to(room).emit('update-display-name', {
-      userId: socket.id, displayName
+  socket.on('ice-candidate', (data) => {
+    socket.to(data.to).emit('ice-candidate', {
+      candidate: data.candidate,
+      from: socket.id,
+      room: data.room
     });
   });
 
-  socket.on('leave-room', (roomName) => handleUserLeave(roomName, socket.id));
+  socket.on('chat-message', (data) => {
+    socket.to(data.room).emit('chat-message', {
+      message: data.message,
+      userId: socket.id,
+      userName: data.userName
+    });
+  });
+
+  socket.on('user-media-update', (data) => {
+    socket.to(data.room).emit('user-media-update', {
+      userId: socket.id,
+      video: data.video,
+      audio: data.audio
+    });
+  });
+
+  socket.on('request-reconnect', (data) => {
+    console.log(`🔄 ${socket.id} requesting reconnect with ${data.targetUser}`);
+    socket.to(data.targetUser).emit('reconnect-request', {
+      from: socket.id
+    });
+  });
+
   socket.on('disconnect', () => {
+    console.log('❌ User disconnected:', socket.id);
     rooms.forEach((users, roomName) => {
-      if (users.has(socket.id)) handleUserLeave(roomName, socket.id);
+      if (users.has(socket.id)) {
+        const userName = users.get(socket.id).displayName;
+        users.delete(socket.id);
+        console.log(`⬅️ ${socket.id} (${userName}) left room ${roomName}`);
+        socket.to(roomName).emit('user-disconnected', socket.id);
+        if (users.size === 0) {
+          rooms.delete(roomName);
+          console.log(`🗑️ Room ${roomName} deleted (empty)`);
+        }
+      }
     });
   });
-
-  function handleUserLeave(roomName, userId) {
-    if (!rooms.has(roomName)) return;
-    const room = rooms.get(roomName);
-    if (room.has(userId)) {
-      room.delete(userId);
-      console.log(`⬅️ ${userId} left room ${roomName}`);
-      socket.to(roomName).emit('user-disconnected', userId);
-      if (room.size === 0) rooms.delete(roomName);
-    }
-  }
 });
 
 const PORT = process.env.PORT || 3000;
